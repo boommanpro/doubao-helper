@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>豆包 URL 调用 — 一条 URL 直达豆包</title>
+<meta name="description" content="通过 URL 参数一键调用豆包，自动填入提示词并发送。兼容 Raycast / Alfred / 浏览器书签。" />
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-2: #f6f8fc;
+    --surface: #ffffff;
+    --border: rgba(15,23,42,0.08);
+    --border-strong: rgba(15,23,42,0.14);
+    --text: #0f172a;
+    --muted: #55627a;
+    --faint: #9aa7bd;
+    --accent: #3d7eff;
+    --accent-2: #2f6ef2;
+    --success: #0ea371;
+    --warn: #d97706;
+    --radius: 12px;
+    --maxw: 1120px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  ::selection { background: rgba(61,126,255,0.18); }
+
+  a { color: var(--accent-2); text-decoration: none; }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px; }
+
+  /* ---------- Nav ---------- */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: rgba(255,255,255,0.7);
+    border-bottom: 1px solid transparent;
+    transition: border-color .3s, background .3s;
+  }
+  nav.scrolled { background: rgba(255,255,255,0.92); border-color: var(--border); }
+  .nav-inner {
+    max-width: var(--maxw); margin: 0 auto; padding: 0 32px;
+    height: 64px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: var(--text); }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #3d7eff, #7a5cff); color: #fff; font-size: 13px;
+  }
+  .nav-links { display: flex; align-items: center; gap: 28px; font-size: 14px; }
+  .nav-links a { color: var(--muted); transition: color .2s; }
+  .nav-links a:hover { color: var(--text); }
+  .btn-ghost {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border-strong); color: var(--text);
+    padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    transition: border-color .2s, background .2s;
+  }
+  .btn-ghost:hover { border-color: var(--accent); background: rgba(61,126,255,0.08); }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    min-height: calc(100svh - 64px);
+    padding-top: 64px;
+    display: flex; align-items: center;
+    background:
+      radial-gradient(900px 520px at 85% -10%, rgba(61,126,255,0.12), transparent 60%),
+      radial-gradient(700px 420px at 0% 110%, rgba(122,92,255,0.08), transparent 60%),
+      var(--bg);
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(15,23,42,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15,23,42,0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(760px 460px at 70% 30%, #000 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(760px 460px at 70% 30%, #000 0%, transparent 75%);
+  }
+  .hero-grid {
+    position: relative;
+    display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 64px; align-items: center;
+    width: 100%;
+  }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent-2); margin-bottom: 22px;
+  }
+  .kicker::before { content: ""; width: 18px; height: 2px; background: var(--accent); border-radius: 2px; }
+  .hero h1 {
+    font-size: clamp(38px, 5.4vw, 62px);
+    line-height: 1.08; letter-spacing: -0.02em; font-weight: 800;
+  }
+  .hero h1 .hl {
+    background: linear-gradient(90deg, #3d7eff, #7a5cff, #0ea371);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { margin: 22px 0 30px; color: var(--muted); font-size: 17px; max-width: 30em; }
+  .lede strong { color: var(--text); font-weight: 600; }
+  .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 34px; }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 15px;
+    padding: 13px 22px; border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(61,126,255,0.35);
+    transition: transform .2s, box-shadow .2s, background .2s;
+  }
+  .btn-primary:hover { transform: translateY(-2px); background: #2f6ef2; box-shadow: 0 12px 32px rgba(61,126,255,0.45); }
+  .btn-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border-strong); color: var(--text); font-weight: 600; font-size: 15px;
+    padding: 13px 22px; border-radius: 10px; transition: border-color .2s, background .2s;
+  }
+  .btn-secondary:hover { border-color: var(--accent); background: rgba(61,126,255,0.08); }
+  .hero-url {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  }
+  .hero-url code {
+    background: var(--bg-2); border: 1px solid var(--border);
+    padding: 7px 12px; border-radius: 8px; color: #334155; white-space: nowrap;
+  }
+  .hero-url code b { color: var(--success); font-weight: 600; }
+  .copy-btn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
+    font-family: var(--font); transition: all .2s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .copy-btn.copied { color: var(--success); border-color: rgba(14,163,113,0.5); }
+
+  /* ---------- Browser mockup ---------- */
+  .browser {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    box-shadow: 0 30px 60px rgba(15,23,42,0.12), 0 0 0 1px rgba(255,255,255,0.6) inset;
+    overflow: hidden;
+    animation: floatIn 1s .15s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes floatIn { from { opacity: 0; transform: translateY(28px) scale(.97); } to { opacity: 1; transform: none; } }
+  .browser-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; border-bottom: 1px solid var(--border); background: var(--bg-2);
+  }
+  .dots { display: flex; gap: 6px; flex-shrink: 0; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .addr {
+    flex: 1; display: flex; align-items: center; gap: 2px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+    padding: 5px 11px; font-family: var(--mono); font-size: 11px; color: #7c8aa5;
+    overflow: hidden; white-space: nowrap;
+  }
+  .addr .q {
+    color: var(--faint); transition: color .4s;
+  }
+  .addr .q.on { color: var(--success); }
+  .browser-body { padding: 18px 16px 14px; display: flex; flex-direction: column; gap: 14px; min-height: 264px; justify-content: flex-end; }
+  .chat { display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    max-width: 88%; padding: 10px 13px; border-radius: 12px;
+    font-size: 12.5px; line-height: 1.55; opacity: 0; transform: translateY(8px);
+    transition: opacity .5s, transform .5s;
+  }
+  .msg.on { opacity: 1; transform: none; }
+  .msg.user {
+    align-self: flex-end; background: var(--accent); color: #fff;
+    border-bottom-right-radius: 4px; white-space: pre-wrap;
+  }
+  .msg.ai {
+    align-self: flex-start; background: var(--bg-2); color: #334155;
+    border: 1px solid var(--border); border-bottom-left-radius: 4px;
+  }
+  .composer {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg); border: 1px solid var(--border-strong); border-radius: 11px;
+    padding: 9px 9px 9px 13px;
+  }
+  .composer-box { flex: 1; font-size: 12.5px; color: #475569; font-family: var(--mono); min-height: 20px; }
+  .composer-box::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+  .composer-box.typing::after { animation: none; color: transparent; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .send {
+    width: 30px; height: 30px; border-radius: 8px; border: none; cursor: default;
+    background: rgba(15,23,42,0.06); color: #7c8aa5; font-size: 14px;
+    transition: background .3s, color .3s, transform .3s;
+  }
+  .send.on { background: var(--accent); color: #fff; transform: scale(1); }
+  .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; justify-content: center; }
+  .badge {
+    font-size: 11.5px; color: var(--muted); border: 1px solid var(--border);
+    padding: 5px 11px; border-radius: 999px; background: var(--bg-2);
+  }
+  .badge b { color: var(--accent-2); font-weight: 600; }
+
+  /* ---------- Sections ---------- */
+  section { padding: 104px 0; position: relative; }
+  .sec-head { max-width: 640px; margin-bottom: 56px; }
+  .sec-eyebrow {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  .sec-head h2 { font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -0.015em; line-height: 1.15; margin-bottom: 14px; }
+  .sec-head p { color: var(--muted); font-size: 16px; }
+
+  /* ---------- Usage ---------- */
+  .usage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .usage-item { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--bg-2); }
+  .usage-item.on { border-color: var(--border-strong); }
+  .usage-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .usage-top .tag { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .usage-top .tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .usage-top .app { font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
+  .code {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: #334155;
+    padding: 16px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  .code .c { color: var(--faint); }
+  .code .k { color: #2f6ef2; }
+  .code .v { color: var(--success); }
+  .params { margin-top: 48px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--bg); }
+  .params table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .params th, .params td { text-align: left; padding: 13px 18px; border-bottom: 1px solid var(--border); }
+  .params th { color: var(--muted); font-weight: 600; font-size: 12.5px; letter-spacing: .05em; background: var(--bg-2); }
+  .params tr:last-child td { border-bottom: none; }
+  .params td code {
+    font-family: var(--mono); font-size: 12.5px; background: var(--bg-2);
+    border: 1px solid var(--border); padding: 2px 7px; border-radius: 5px; color: #2f6ef2;
+  }
+  .params td .req { color: var(--success); font-size: 12px; }
+  .params td .opt { color: var(--faint); font-size: 12px; }
+
+  /* ---------- Features ---------- */
+  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .feat-item { padding: 30px 28px; border-top: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .feat-item:nth-child(3n) { border-right: none; }
+  .feat-num { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: .08em; margin-bottom: 14px; }
+  .feat-item h3 { font-size: 17px; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .feat-item p { color: var(--muted); font-size: 14px; }
+  .feat-item .pill { display: inline-flex; margin-top: 14px; font-size: 11.5px; font-weight: 600; color: var(--accent-2); background: rgba(61,126,255,0.12); border: 1px solid rgba(61,126,255,0.25); padding: 4px 10px; border-radius: 999px; }
+
+  /* ---------- Install ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; counter-reset: step; }
+  .step { position: relative; padding: 26px 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); }
+  .step::before {
+    counter-increment: step; content: counter(step, decimal-leading-zero);
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent);
+  }
+  .step h3 { font-size: 16px; margin: 14px 0 8px; }
+  .step p { color: var(--muted); font-size: 13.5px; }
+  .step a { font-weight: 600; }
+  .install-note { margin-top: 36px; text-align: center; color: var(--faint); font-size: 13px; }
+
+  /* ---------- FAQ ---------- */
+  .faq-list { max-width: 760px; }
+  .faq { border-bottom: 1px solid var(--border); }
+  .faq:first-child { border-top: 1px solid var(--border); }
+  .faq summary {
+    list-style: none; cursor: pointer; padding: 22px 4px; font-size: 15.5px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px; color: var(--text);
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after {
+    content: "+"; font-size: 20px; color: var(--accent); transition: transform .25s; font-weight: 400;
+  }
+  .faq[open] summary::after { transform: rotate(45deg); }
+  .faq p { color: var(--muted); font-size: 14px; padding: 0 4px 22px; max-width: 64ch; }
+
+  /* ---------- Final CTA ---------- */
+  .cta-band {
+    position: relative; border: 1px solid var(--border-strong); border-radius: 20px;
+    padding: 64px 48px; text-align: center; overflow: hidden;
+    background:
+      radial-gradient(560px 280px at 50% 0%, rgba(61,126,255,0.14), transparent 70%),
+      var(--bg-2);
+  }
+  .cta-band h2 { font-size: clamp(26px, 3vw, 36px); margin-bottom: 14px; letter-spacing: -0.015em; }
+  .cta-band p { color: var(--muted); margin-bottom: 30px; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+  /* ---------- Footer ---------- */
+  footer { border-top: 1px solid var(--border); padding: 40px 0 60px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; color: var(--faint); font-size: 13px; }
+  .foot a { color: var(--muted); }
+  .foot a:hover { color: var(--text); }
+  .foot .brand { color: var(--muted); font-size: 13px; }
+
+  /* ---------- Reveal ---------- */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s cubic-bezier(.2,.8,.2,1), transform .7s cubic-bezier(.2,.8,.2,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    .hero { padding-top: 120px; }
+    .feat-grid { grid-template-columns: 1fr; }
+    .feat-item { border-right: none; }
+    .feat-item:nth-child(n) { border-right: none; }
+    .usage-grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .nav-links .hide-m { display: none; }
+    section { padding: 72px 0; }
+    .cta-band { padding: 44px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== Nav ===================== -->
+<nav id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top">
+      <span class="brand-mark">豆</span>
+      <span>豆包 URL 调用</span>
+    </a>
+    <div class="nav-links">
+      <a class="hide-m" href="#usage">用法</a>
+      <a class="hide-m" href="#features">特性</a>
+      <a class="hide-m" href="#install">安装</a>
+      <a class="hide-m" href="#faq">FAQ</a>
+      <a class="btn-ghost" href="https://github.com/boommanpro/doubao-helper" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ===================== Hero ===================== -->
+<header class="hero" id="top">
+  <div class="wrap" style="width:100%">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <div class="kicker">Doubao Helper · 油猴脚本</div>
+        <h1>一条 URL，<br/>直达豆包 <span class="hl">自动对话</span></h1>
+        <p class="lede">
+          通过 URL 参数一键调用豆包：<strong>自动填入提示词、自动发送</strong>。
+          内置翻译 / 润色 / 总结 / 解释模板，可视化配置，兼容
+          <strong>Raycast、Alfred、浏览器书签</strong>。
+        </p>
+        <div class="hero-cta">
+          <a class="btn-primary" href="#install">安装脚本</a>
+          <a class="btn-secondary" href="#usage">查看用法 ↓</a>
+        </div>
+        <div class="hero-url">
+          <code><b>https://www.doubao.com/chat/</b>?type=translate&amp;content=Hello world</code>
+          <button class="copy-btn" data-copy="https://www.doubao.com/chat/?type=translate&content=Hello world">复制</button>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="browser">
+          <div class="browser-bar">
+            <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+            <div class="addr">
+              <span>https://www.doubao.com/chat/</span>
+              <span class="q" id="addr-q">?type=translate&amp;content=Hello world</span>
+            </div>
+          </div>
+          <div class="browser-body">
+            <div class="chat">
+              <div class="msg user" id="m-user">请将以下英文翻译成中文，仅输出译文，不要附加任何解释：&#10;&#10;Hello world</div>
+              <div class="msg ai" id="m-ai">你好，世界</div>
+            </div>
+            <div class="composer">
+              <div class="composer-box" id="composer"></div>
+              <div class="send" id="send">→</div>
+            </div>
+          </div>
+        </div>
+        <div class="badge-row">
+          <span class="badge">适配新版 <b>ProseMirror / TipTap</b> 输入框</span>
+          <span class="badge">自动清理 URL 参数</span>
+          <span class="badge">多级发送回退保障</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ===================== Usage ===================== -->
+  <section id="usage">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="sec-eyebrow">Usage</div>
+        <h2>怎么用？打开一个 URL 就行</h2>
+        <p>把内容编码进链接，豆包页面加载后自动填入并发送。以下三种方式任选。</p>
+      </div>
+
+      <div class="usage-grid">
+        <div class="usage-item reveal">
+          <div class="usage-top">
+            <span class="tag">基础调用</span>
+            <span class="app">浏览器 / 书签</span>
+          </div>
+          <div class="code"><span class="c">// 打开链接，自动翻译并发送</span>
+https://www.doubao.com/chat/<span class="k">?type=translate</span><span class="v">&amp;content=Hello world</span></div>
+        </div>
+        <div class="usage-item reveal">
+          <div class="usage-top">
+            <span class="tag">Raycast / Alfred</span>
+            <span class="app">macOS 快捷键</span>
+          </div>
+          <div class="code"><span class="c"># 剪贴板文本一键翻译（脚本命令）</span>
+open "https://www.doubao.com/chat/<span class="k">?type=translate</span><span class="v">&amp;content=$(pbpaste)</span>"</div>
+        </div>
+        <div class="usage-item reveal">
+          <div class="usage-top">
+            <span class="tag">只填不发送</span>
+            <span class="app">手动确认后发送</span>
+          </div>
+          <div class="code"><span class="c">// 在配置面板关闭「自动发送」即可</span>
+https://www.doubao.com/chat/<span class="k">?type=polish</span><span class="v">&amp;content=your%20text</span></div>
+        </div>
+        <div class="usage-item reveal">
+          <div class="usage-top">
+            <span class="tag">省略 type</span>
+            <span class="app">默认 translate</span>
+          </div>
+          <div class="code"><span class="c">// 不传 type 时默认走「英文翻译」模板</span>
+https://www.doubao.com/chat/<span class="v">?content=some%20text</span></div>
+        </div>
+      </div>
+
+      <div class="params reveal">
+        <table>
+          <tr><th>参数</th><th>必填</th><th>说明</th></tr>
+          <tr>
+            <td><code>type</code></td>
+            <td><span class="opt">否</span></td>
+            <td>提示词类型键名（translate / polish / summarize / explain …），省略时默认 <code>translate</code></td>
+          </tr>
+          <tr>
+            <td><code>content</code></td>
+            <td><span class="req">是</span></td>
+            <td>传给豆包的内容，建议做 URL 编码（空格 → <code>%20</code>）</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Features ===================== -->
+  <section id="features" style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="sec-eyebrow">Features</div>
+        <h2>为效率而生，开箱即用</h2>
+        <p>内置模板 + 可视化配置，把「打开豆包 → 打提示词 → 发送」压缩成一次 URL 访问。</p>
+      </div>
+
+      <div class="feat-grid">
+        <div class="feat-item reveal">
+          <div class="feat-num">01</div>
+          <h3>内置 4 种模板</h3>
+          <p>英文翻译、英文润色、内容总结、概念解释，全部开箱即用，零配置上手。</p>
+          <span class="pill">translate / polish / summarize / explain</span>
+        </div>
+        <div class="feat-item reveal">
+          <div class="feat-num">02</div>
+          <h3>可视化配置面板</h3>
+          <p>右下角 ⚙ 按钮，弹窗内增删改查模板，无需修改代码，保存即时生效。</p>
+          <span class="pill">模板中的 {content} 自动替换</span>
+        </div>
+        <div class="feat-item reveal">
+          <div class="feat-num">03</div>
+          <h3>自动发送</h3>
+          <p>填入提示词后自动点击发送；也可关闭，只填不发送，由你掌控。</p>
+          <span class="pill">发送延迟可调（默认 300ms）</span>
+        </div>
+        <div class="feat-item reveal">
+          <div class="feat-num">04</div>
+          <h3>URL 自动清理</h3>
+          <p>发送后自动移除地址栏参数，刷新页面不会重复发送同一内容。</p>
+          <span class="pill">cleanUrl 开关</span>
+        </div>
+        <div class="feat-item reveal">
+          <div class="feat-num">05</div>
+          <h3>适配新版输入框</h3>
+          <p>兼容豆包新版 ProseMirror / TipTap 富文本输入框，同时兼容旧版 textarea。</p>
+          <span class="pill">v2.0 全面重写写入逻辑</span>
+        </div>
+        <div class="feat-item reveal">
+          <div class="feat-num">06</div>
+          <h3>多级发送回退</h3>
+          <p>发送按钮 → React onSubmit → 模拟 Enter，层层回退，最大化发送成功率。</p>
+          <span class="pill">Toast 实时反馈状态</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Install ===================== -->
+  <section id="install" style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="sec-eyebrow">Install</div>
+        <h2>三步装好，立即可用</h2>
+        <p>只需一个油猴脚本管理器，脚本仅在豆包聊天页运行，不打扰其他网站。</p>
+      </div>
+
+      <div class="steps">
+        <div class="step reveal">
+          <h3>安装脚本管理器</h3>
+          <p>安装 <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a> 或 <a href="https://violentmonkey.github.io/" target="_blank" rel="noopener">Violentmonkey</a> 浏览器扩展。</p>
+        </div>
+        <div class="step reveal">
+          <h3>导入脚本</h3>
+          <p>打开 <a href="https://github.com/boommanpro/doubao-helper" target="_blank" rel="noopener">GitHub 仓库</a> 的 <a href="https://github.com/boommanpro/doubao-helper/blob/main/doubao-helper.js" target="_blank" rel="noopener">doubao-helper.js</a>，复制代码新建脚本并保存。</p>
+        </div>
+        <div class="step reveal">
+          <h3>打开豆包试用</h3>
+          <p>访问任意带参数的调用 URL，即可看到自动填入并发送的全过程。</p>
+        </div>
+      </div>
+
+      <p class="install-note reveal">试试这个：<button class="copy-btn" data-copy="https://www.doubao.com/chat/?type=translate&content=Hello%20world">复制调用 URL</button> 然后在浏览器打开</p>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section id="faq" style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="sec-eyebrow">FAQ</div>
+        <h2>常见问题</h2>
+      </div>
+      <div class="faq-list reveal">
+        <details class="faq">
+          <summary>打开 URL 后没有自动发送？</summary>
+          <p>检查配置面板中「自动发送」是否开启。发送按钮未生效时脚本会依次回退 React onSubmit、模拟 Enter 键；仍失败可手动点击发送按钮。</p>
+        </details>
+        <details class="faq">
+          <summary>刷新页面会重复发送吗？</summary>
+          <p>不会。「发送后清理 URL 参数」默认开启，发送完成后地址栏参数会被移除，刷新不会重复触发。</p>
+        </details>
+        <details class="faq">
+          <summary>自定义模板会丢失吗？</summary>
+          <p>模板保存在油猴本地存储中。卸载脚本或清除站点数据会丢失，但内置模板可在配置面板一键「重置为默认」恢复。</p>
+        </details>
+        <details class="faq">
+          <summary>content 里有特殊字符怎么办？</summary>
+          <p>建议对 content 做 URL 编码（空格 → %20，& → %26）。配置面板会自动为每个模板生成可复制的编码 URL。</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Final CTA ===================== -->
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="cta-band reveal">
+        <h2>把「打开豆包」变成一次 URL 访问</h2>
+        <p>开源 · 免费 · 欢迎 Star 与反馈，一起让豆包用起来更顺手。</p>
+        <div class="cta-row">
+          <a class="btn-primary" href="https://github.com/boommanpro/doubao-helper" target="_blank" rel="noopener">GitHub 仓库 ↗</a>
+          <a class="btn-secondary" href="https://github.com/boommanpro/doubao-helper/blob/main/doubao-helper.js" target="_blank" rel="noopener">查看脚本源码</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== Footer ===================== -->
+<footer>
+  <div class="wrap foot">
+    <span class="brand">豆包 URL 调用 · Doubao Helper</span>
+    <span>用 ❤ 制作 · <a href="https://github.com/boommanpro/doubao-helper" target="_blank" rel="noopener">boommanpro/doubao-helper</a></span>
+  </div>
+</footer>
+
+<script>
+  /* ---------- Nav 滚动态 ---------- */
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 12);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  /* ---------- 滚动显现 ---------- */
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  /* ---------- 复制按钮 ---------- */
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+      }
+      const prev = btn.textContent;
+      btn.textContent = '已复制 ✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = prev; btn.classList.remove('copied'); }, 1600);
+    });
+  });
+
+  /* ---------- Hero 浏览器演示动画 ---------- */
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const q = document.getElementById('addr-q');
+  const composer = document.getElementById('composer');
+  const send = document.getElementById('send');
+  const mUser = document.getElementById('m-user');
+  const mAi = document.getElementById('m-ai');
+  const PROMPT = '请将以下英文翻译成中文，仅输出译文，不要附加任何解释：\n\nHello world';
+
+  async function typeText(el, text, speed) {
+    el.classList.add('typing');
+    el.textContent = '';
+    for (const ch of text) {
+      el.textContent += ch;
+      await wait(speed);
+    }
+    el.classList.remove('typing');
+  }
+
+  function reset() {
+    q.classList.remove('on');
+    composer.textContent = '';
+    composer.classList.remove('typing');
+    send.classList.remove('on');
+    mUser.classList.remove('on');
+    mAi.classList.remove('on');
+  }
+
+  async function demoLoop() {
+    reset();
+    await wait(900);
+    q.classList.add('on');              // 1. URL 参数生效
+    await wait(1500);
+    await typeText(composer, PROMPT, 26); // 2. 提示词自动填入
+    await wait(500);
+    send.classList.add('on');           // 3. 点击发送
+    mUser.classList.add('on');
+    await wait(900);
+    composer.textContent = '';          // 4. 输入框清空，AI 回复
+    await wait(450);
+    mAi.classList.add('on');
+    await wait(2600);
+    demoLoop();
+  }
+  demoLoop();
+</script>
+</body>
+</html>
